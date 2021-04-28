@@ -37,10 +37,10 @@
  * These definitions should be adjusted for your particular hardware and
  * application requirements.
  *
- * These parameters and more are described within the 'configuration' section of the
- * FreeRTOS API documentation available on the FreeRTOS.org web site.
+ * THESE PARAMETERS ARE DESCRIBED WITHIN THE 'CONFIGURATION' SECTION OF THE
+ * FreeRTOS API DOCUMENTATION AVAILABLE ON THE FreeRTOS.org WEB SITE.
  *
- * See http://www.freertos.org/a00110.html
+ * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
 
 /* USER CODE BEGIN Includes */
@@ -86,12 +86,6 @@
 /* Co-routine definitions. */
 #define configUSE_CO_ROUTINES                    0
 #define configMAX_CO_ROUTINE_PRIORITIES          ( 2 )
-
-/* Software timer definitions. */
-#define configUSE_TIMERS                         1
-#define configTIMER_TASK_PRIORITY                ( 2 )
-#define configTIMER_QUEUE_LENGTH                 10
-#define configTIMER_TASK_STACK_DEPTH             256
 
 /* Set the following definitions to 1 to include the API function, or zero
 to exclude the API function. */

@@ -17,6 +17,7 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
@@ -42,6 +43,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim4;
 
@@ -49,14 +51,16 @@ UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_tx;
 DMA_HandleTypeDef hdma_usart2_rx;
 
-osThreadId LEDTaskHandle;
+osThreadId defaultTaskHandle;
 osThreadId uartTxTaskHandle;
 osThreadId statsTaskHandle;
-osThreadId adcTaskHandle;
+osThreadId ADCTaskHandle;
 osMessageQId uartTxQueueHandle;
-osMessageQId uartRxQueueHandle;
 /* USER CODE BEGIN PV */
-
+uint8_t  trig[] = "Triggered!";
+uint8_t *msg1 =  trig;
+uint8_t help[] = "This code monitors for blue/user button trigger, and reads ADC1 when asked with letter 't'";
+uint8_t *msg_help = help;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,10 +70,10 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM4_Init(void);
-void StartLEDTask(void const * argument);
+void StartDefaultTask(void const * argument);
 void StartUartTxTask(void const * argument);
 void StartStatsTask(void const * argument);
-void StartTask04(void const * argument);
+void StartADCTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -77,6 +81,8 @@ void StartTask04(void const * argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+volatile uint8_t buf[1];
+const uint16_t buf_len = 1;
 
 /* USER CODE END 0 */
 
@@ -87,6 +93,7 @@ void StartTask04(void const * argument);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+
 
   /* USER CODE END 1 */
 
@@ -113,6 +120,7 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
+  HAL_UART_Receive_IT(&huart2, (uint8_t*)buf, buf_len);
 
   HAL_TIM_Base_Start_IT(&htim4);
 
@@ -135,30 +143,26 @@ int main(void)
   osMessageQDef(uartTxQueue, 10, uint8_t *);
   uartTxQueueHandle = osMessageCreate(osMessageQ(uartTxQueue), NULL);
 
-  /* definition and creation of uartRxQueue */
-  osMessageQDef(uartRxQueue, 10, uint8_t*);
-  uartRxQueueHandle = osMessageCreate(osMessageQ(uartRxQueue), NULL);
-
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of LEDTask */
-  osThreadDef(LEDTask, StartLEDTask, osPriorityNormal, 0, 128);
-  LEDTaskHandle = osThreadCreate(osThread(LEDTask), NULL);
+  /* definition and creation of defaultTask */
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* definition and creation of uartTxTask */
   osThreadDef(uartTxTask, StartUartTxTask, osPriorityNormal, 0, 128);
   uartTxTaskHandle = osThreadCreate(osThread(uartTxTask), NULL);
 
   /* definition and creation of statsTask */
-  osThreadDef(statsTask, StartStatsTask, osPriorityLow, 0, 260);
+  osThreadDef(statsTask, StartStatsTask, osPriorityIdle, 0, 260);
   statsTaskHandle = osThreadCreate(osThread(statsTask), NULL);
 
-  /* definition and creation of adcTask */
-  osThreadDef(adcTask, StartTask04, osPriorityAboveNormal, 0, 128);
-  adcTaskHandle = osThreadCreate(osThread(adcTask), NULL);
+  /* definition and creation of ADCTask */
+  osThreadDef(ADCTask, StartADCTask, osPriorityNormal, 0, 128);
+  ADCTaskHandle = osThreadCreate(osThread(ADCTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -192,8 +196,7 @@ void SystemClock_Config(void)
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
@@ -209,7 +212,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  /** Initializes the CPU, AHB and APB buses clocks
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -244,10 +247,10 @@ static void MX_ADC1_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
@@ -374,6 +377,7 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
   /* DMA1_Stream5_IRQn interrupt configuration */
@@ -382,6 +386,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA2_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
 
 }
 
@@ -433,54 +440,85 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-uint32_t LED_delay = 0;
-uint8_t LED_speedup = 0;
+uint32_t LED_delay = 1000;
+uint8_t LED_speedup = 200;
 
 
 #define LED_G_PORT GPIOA
 #define LED_G_PIN	GPIO_PIN_5
 
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	//BaseType_t xYieldRequired;
+	if ((buf[0]=='t')||(buf[0] == 'T'))
+	{
+		// Start temperature reading from ADC
+		//HAL_ADC_Start_IT(&hadc1);
+		xTaskResumeFromISR( ADCTaskHandle );
 
-void HAL_GPIO_EXTI_Callback(uint16_t mikel){
-
-	uint8_t msg_buffer[80];
-	uint8_t *pTxBuff;
-	if(mikel == GPIO_PIN_13){
-		//LED_delay -= 100;
-		//sprintf((char*)msg_buffer, "TRIGGERSEEDFSDSF\n\r");
-		//pTxBuff = msg_buffer;
-		//xQueueGenericSend(uartTxQueueHandle, &pTxBuff, 10, queueSEND_TO_BACK);
 	}
+	if ((buf[0]=='h')||(buf[0]=='H')||(buf[0] == '?'))
+	{
+		xQueueGenericSendFromISR(uartTxQueueHandle, &msg_help, 10, queueSEND_TO_BACK);
+	}
+	HAL_UART_Receive_IT(&huart2, (uint8_t*)buf, buf_len);
+ }
 
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+  /* Prevent unused argument(s) compilation warning */
+  //UNUSED(huart);
+  /* NOTE: This function Should not be modified, when the callback is needed,
+           the HAL_UART_TxCpltCallback could be implemented in the user file
+   */
+  //if (huart == huart2)
+  {
+	  BaseType_t xHigherPriorityTaskWoken = pdFALSE, xResult;
+	  //	// ADC ready
+	  uint32_t temp = HAL_ADC_GetValue(&hadc1);
+	  uint8_t msg_buffer[80];
+	  uint8_t *pTxBuff = NULL;
+	  sprintf((char*)msg_buffer, "T:%d\n\r", temp);
+	  pTxBuff = msg_buffer;
+	  xQueueGenericSendFromISR(uartTxQueueHandle, &pTxBuff, 10, queueSEND_TO_BACK);
+	  //xResult = xTaskNotifyFromISR( ADCTaskHandle, temp, 0,0);
+	  xTaskGenericNotifyFromISR(ADCTaskHandle, temp, eIncrement, NULL, NULL);
+  }
 }
 
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if(LED_delay > LED_speedup ) LED_delay -= LED_speedup; else LED_delay=1000;
+	//HAL_UART_Transmit(&huart2, msg1, strlen((char*)msg1), 5);
+	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, 0);
+	xQueueGenericSendFromISR(uartTxQueueHandle, &msg1, 10, queueSEND_TO_BACK);
+}
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartLEDTask */
+/* USER CODE BEGIN Header_StartDefaultTask */
 /**
-  * @brief  Function implementing the LEDTask thread.
-  * @param  argument: Not used
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used 
   * @retval None
   */
-/* USER CODE END Header_StartLEDTask */
-void StartLEDTask(void const * argument)
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
+	uint8_t msg_buffer[80];
+	uint8_t *pTxBuff;
   /* Infinite loop */
   for(;;)
   {
+		//if (LED_delay < 1000) LED_delay += 100; else LED_delay=1000;
+		vTaskDelay(LED_delay); // Ticks
+		HAL_GPIO_WritePin(LED_G_PORT,LED_G_PIN, 1); //Toggle LED
+		vTaskDelay(LED_delay);
+		HAL_GPIO_WritePin(LED_G_PORT, LED_G_PIN, 0); //Toggle LED
 
-	  if (LED_delay < 1000) LED_delay += 100; else LED_delay=1000;
-	  vTaskDelay(LED_delay);
-	  HAL_GPIO_WritePin(LED_G_PORT,LED_G_PIN, 1); //Toggle LED
-	  vTaskDelay(LED_delay);
-	  //osDelay(LED_delay);
-	  HAL_GPIO_WritePin(LED_G_PORT, LED_G_PIN, 0); //Toggle LED
-
-
-   //osDelay(LED_delay); // ms
+    //osDelay(1); // ms
   }
   /* USER CODE END 5 */
 }
@@ -500,6 +538,7 @@ void StartUartTxTask(void const * argument)
 	/* Infinite loop */
 	for(;;)
 	{
+
 		if (notification!=0)
 		{
 			while (pdFALSE==xQueueReceive( uartTxQueueHandle, &pTxBuff, portMAX_DELAY ));
@@ -538,7 +577,6 @@ void StartStatsTask(void const * argument)
 	// separate buffers for two messages (to avoid overwritting)
 	uint8_t ps_buffer[40*4];
 	uint8_t msg_buffer[80];
-	uint8_t ur_mom[80];
 	uint8_t *pTxBuff;
   /* Infinite loop */
 	  for(;;)
@@ -549,7 +587,7 @@ void StartStatsTask(void const * argument)
 	    pTxBuff = ps_buffer;
 	    xQueueGenericSend(uartTxQueueHandle, (void *)&pTxBuff, 10, queueSEND_TO_BACK);
 
-		dstack = uxTaskGetStackHighWaterMark(LEDTaskHandle);
+		dstack = uxTaskGetStackHighWaterMark(defaultTaskHandle);
 		t2stack = uxTaskGetStackHighWaterMark(statsTaskHandle);
 		sprintf((char*)msg_buffer, "Stack High Mark: T_default=%ld, T_2=%ld\n\r", dstack, t2stack);
 		pTxBuff = msg_buffer;
@@ -558,22 +596,29 @@ void StartStatsTask(void const * argument)
   /* USER CODE END StartStatsTask */
 }
 
-/* USER CODE BEGIN Header_StartTask04 */
+/* USER CODE BEGIN Header_StartADCTask */
 /**
-* @brief Function implementing the adcTask thread.
+* @brief Function implementing the ADCTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartTask04 */
-void StartTask04(void const * argument)
+/* USER CODE END Header_StartADCTask */
+void StartADCTask(void const * argument)
 {
-  /* USER CODE BEGIN StartTask04 */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartTask04 */
+  /* USER CODE BEGIN StartADCTask */
+	uint32_t ADCValue;
+	BaseType_t xResult;
+	/* Infinite loop */
+	for(;;)
+	{
+		vTaskSuspend( NULL );
+		HAL_ADC_Start_IT(&hadc1);
+		xResult = xTaskNotifyWait(0,0, &ADCValue, 100);
+		//if(xResult == pdPASS)
+		//{
+		//}
+	}
+  /* USER CODE END StartADCTask */
 }
 
  /**
